@@ -1,0 +1,7 @@
+*.pyc
+*.pyo
+*.py~
+final.txt
+
+#Folders
+cartpole-cem-experiment-*/
