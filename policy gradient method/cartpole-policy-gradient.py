@@ -8,7 +8,9 @@
 import gym
 import tensorflow as tf
 import numpy as np
-from collections import defaultdict
+import ad
+import ad.admath
+
 print ("Packs loaded")
 
 #Replay memory consists of multiple lists of state, action, next state, reward, return from state
@@ -18,6 +20,7 @@ replay_actions = []
 replay_rewards = []
 replay_next_states = []
 replay_return_from_states = []
+
 class Actor:
 	def __init__(self, env):
 		self.env = env
@@ -25,33 +28,108 @@ class Actor:
 		self.action_space = env.action_space
 		self.action_space_n = self.action_space.n
 		self.weights = np.random.randn(self.action_space_n,len(self.observation_space.high)) #Initialize random weight
-
-	def rollout_policy(self, timeSteps):
+		self.biases = np.random.randn(self.action_space_n)
+		# #Learning parameters
+		self.learning_rate = 0.1
+	def rollout_policy(self, timeSteps, episodeNumber):
 		"""Rollout policy for one episode, update the replay memory and return total reward"""
 		#First clear the current replay memory
+		# print "Weights: ", self.weights
+		# print "Biases: ", self.biases
 		self.reset_memory()
 		total_reward = 0
 		curr_state = self.env.reset()
 		
 		for time in xrange(timeSteps):
 			self.env.render()	
-			action = self.sample_from_policy(curr_state)
+			action = self.choose_action(curr_state)
+			
 			next_state, reward, done, info = self.env.step(action)
 			#Update the replay memory
 			self.update_memory(time, curr_state.tolist(), action, reward, next_state.tolist())
 			#Update the total reward
 			total_reward += reward
-			if done:
+			if done or time > self.env.spec.timestep_limit :
+				print "Episode {} ended at step {} with total reward {}".format(episodeNumber, time, total_reward)
 				break
 			curr_state = next_state
 		return total_reward
 
-	def update_policy():
-		return 0
+	def update_weights(self, grad):
+		# self.weights = np.add(self.weights, grad)
+		weight_grad = grad[np.ix_([0,1,2,3, 5,6,7,8])]
+		weight_grad = weight_grad.reshape(2,4)
+		bias_grad = [0.0]*2
+		bias_grad[0] = grad[4]
+		bias_grad[0] = grad[9]
+		bias_grad = np.asarray(bias_grad)
+		self.weights = np.add(self.weights, self.learning_rate*weight_grad)
+		self.biases = np.add(self.biases, self.learning_rate*bias_grad)
+	
 
-	def sample_from_policy(self, state):
+	def advantage_vector(self):
+		global replay_states, replay_actions, replay_rewards, replay_next_states, replay_return_from_states
+		return replay_return_from_states
+
+	def gradient_estimate(self, params):
+		global replay_states, replay_actions, replay_rewards, replay_next_states, replay_return_from_states
+		log_policy_vector = []
+		weights = params[np.ix_([0,1,2,3, 5,6,7,8])] #TODO: Remove hardcoding
+		weights = weights.reshape(2,4)
+		# biases = params[np.ix_([0,1], [4])]
+		biases = [0.0]*2
+		biases[0] = params[4]
+		biases[1] = params[9]
+		
+		for i in xrange(len(replay_states)):	
+			chosen_action = replay_actions[i]
+			action_probs = self.softmax(replay_states[i], weights, biases)
+			chosen_action_log_prob = ad.admath.log(action_probs[chosen_action])
+			log_policy_vector.append(chosen_action_log_prob)
+
+		grad_estimate_value = np.dot(np.asarray(log_policy_vector), self.advantage_vector())
+		return grad_estimate_value
+
+
+	def update_policy(self):
+
+		
+		grad_function, hess_function = ad.gh(self.gradient_estimate)
+		
+		curr_params = np.zeros(2*len(self.observation_space.high)+2)
+		curr_params[0] = self.weights[0][0]
+		curr_params[1] = self.weights[0][1]
+		curr_params[2] = self.weights[0][2]
+		curr_params[3] = self.weights[0][3]
+		curr_params[4] = self.biases[0]
+		curr_params[5] = self.weights[1][0]
+		curr_params[6] = self.weights[1][1]
+		curr_params[7] = self.weights[1][2]
+		curr_params[8] = self.weights[1][3]
+		curr_params[9] = self.biases[1]
+
+		grad = grad_function(curr_params)
+		# print "Grad: ", grad
+		self.update_weights(grad)
+
+
+	
+	def softmax(self, state, weights, biases):
+		prob_actions = [0]*self.action_space_n
+
+		prob_actions = ad.admath.exp(np.add(np.dot(weights, state), biases))
+		
+		prob_actions = np.true_divide(prob_actions, sum(prob_actions))
+		
+		return prob_actions
+
+
+
+	def choose_action(self, state):
 		#Use softmax policy to sample
-		return self.action_space.sample()
+		prob_actions = self.softmax(state, self.weights, self.biases)
+		action = np.random.choice([0,1],1,replace=True, p=prob_actions)
+		return action[0]
 
 	def update_memory(self, time, curr_state, action, reward, next_state):
 		global replay_states, replay_actions, replay_rewards, replay_next_states, replay_return_from_states
@@ -68,10 +146,10 @@ class Actor:
 			#Iterate through the replay memory  and update the final return for all states 
 			for i in xrange(len(replay_return_from_states)):
 				replay_return_from_states[i] += reward
-		print "Timestep: ", time
-		print replay_states
-		print replay_actions
-		print replay_return_from_states
+		# print "Timestep: ", time
+		# print replay_states
+		# print replay_actions
+		# print replay_return_from_states
 	
 	def reset_memory(self):
 		global replay_states, replay_actions, replay_rewards, replay_next_states, replay_return_from_states
@@ -133,7 +211,13 @@ def main():
 	# env.render()
 	actor = Actor(env)
 	# critic = Critic()
-	actor.rollout_policy(200)
+	numEpisodes = 20000
+	for i in xrange(numEpisodes):
+		actor.rollout_policy(200, i+1)
+		actor.update_policy()
+
+
+
 
 
 
