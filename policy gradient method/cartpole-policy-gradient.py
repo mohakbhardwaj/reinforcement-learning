@@ -27,15 +27,41 @@ class Actor:
 		self.observation_space = env.observation_space
 		self.action_space = env.action_space
 		self.action_space_n = self.action_space.n
-		self.weights = np.random.randn(self.action_space_n,len(self.observation_space.high)) #Initialize random weight
-		self.biases = np.random.randn(self.action_space_n)
-		# #Learning parameters
+		#Learning parameters
 		self.learning_rate = 0.1
+		# self.weights = np.random.randn(self.action_space_n,len(self.observation_space.high)) #Initialize random weight
+		# self.biases = np.random.randn(self.action_space_n)
+		#Declare tf graph
+		self.graph = tf.Graph()
+		#Build the graph when instantiated
+		with self.graph.as_default():
+			self.weights = tf.Variable(tf.random_normal([len(self.observation_space.high), self.action_space_n]))
+			self.biases = tf.Variable(tf.random_normal([self.action_space_n]))
+
+		# 	#Inputs
+			self.x = tf.placeholder("float", [None, len(self.observation_space.high)])#State input
+			self.y = tf.placeholder("float") #Advantage input
+			self.action_input = tf.placeholder("float", [None, self.action_space_n]) #Input action to return the probability associated with that action
+
+			self.policy = self.softmax_policy(self.x, self.weights, self.biases) #Softmax policy
+		
+		# 	# self.log_policy = tf.log(self.policy)
+			self.log_action_probability = tf.reduce_sum(self.action_input*tf.log(self.policy))
+			self.loss = -self.log_action_probability*self.y #Loss is score function times advantage
+			self.optim = tf.train.GradientDescentOptimizer(self.learning_rate).minimize(self.loss)
+		# 	#Initializing all variables
+			self.init = tf.initialize_all_variables()
+			print ("Policy Graph Constructed")
+		self.sess = tf.Session(graph = self.graph)
+		self.sess.run(self.init)
+			
+
 	def rollout_policy(self, timeSteps, episodeNumber):
 		"""Rollout policy for one episode, update the replay memory and return total reward"""
 		#First clear the current replay memory
 		# print "Weights: ", self.weights
 		# print "Biases: ", self.biases
+
 		self.reset_memory()
 		total_reward = 0
 		curr_state = self.env.reset()
@@ -43,7 +69,8 @@ class Actor:
 		for time in xrange(timeSteps):
 			self.env.render()	
 			action = self.choose_action(curr_state)
-			
+			# action = self.env.action_space.sample()
+			# print "Action selected: ", action
 			next_state, reward, done, info = self.env.step(action)
 			#Update the replay memory
 			self.update_memory(time, curr_state.tolist(), action, reward, next_state.tolist())
@@ -53,83 +80,45 @@ class Actor:
 				print "Episode {} ended at step {} with total reward {}".format(episodeNumber, time, total_reward)
 				break
 			curr_state = next_state
+		# print self.sess.run(self.weights), self.sess.run(self.biases)
 		return total_reward
-
-	def update_weights(self, grad):
-		# self.weights = np.add(self.weights, grad)
-		weight_grad = grad[np.ix_([0,1,2,3, 5,6,7,8])]
-		weight_grad = weight_grad.reshape(2,4)
-		bias_grad = [0.0]*2
-		bias_grad[0] = grad[4]
-		bias_grad[0] = grad[9]
-		bias_grad = np.asarray(bias_grad)
-		self.weights = np.add(self.weights, self.learning_rate*weight_grad)
-		self.biases = np.add(self.biases, self.learning_rate*bias_grad)
-	
-
-	def advantage_vector(self):
-		global replay_states, replay_actions, replay_rewards, replay_next_states, replay_return_from_states
-		return replay_return_from_states
-
-	def gradient_estimate(self, params):
-		global replay_states, replay_actions, replay_rewards, replay_next_states, replay_return_from_states
-		log_policy_vector = []
-		weights = params[np.ix_([0,1,2,3, 5,6,7,8])] #TODO: Remove hardcoding
-		weights = weights.reshape(2,4)
-		# biases = params[np.ix_([0,1], [4])]
-		biases = [0.0]*2
-		biases[0] = params[4]
-		biases[1] = params[9]
-		
-		for i in xrange(len(replay_states)):	
-			chosen_action = replay_actions[i]
-			action_probs = self.softmax(replay_states[i], weights, biases)
-			chosen_action_log_prob = ad.admath.log(action_probs[chosen_action])
-			log_policy_vector.append(chosen_action_log_prob)
-
-		grad_estimate_value = np.dot(np.asarray(log_policy_vector), self.advantage_vector())
-		return grad_estimate_value
 
 
 	def update_policy(self):
+		#Update the weights by running gradient descent on graph with loss function defined
 
-		
-		grad_function, hess_function = ad.gh(self.gradient_estimate)
-		
-		curr_params = np.zeros(2*len(self.observation_space.high)+2)
-		curr_params[0] = self.weights[0][0]
-		curr_params[1] = self.weights[0][1]
-		curr_params[2] = self.weights[0][2]
-		curr_params[3] = self.weights[0][3]
-		curr_params[4] = self.biases[0]
-		curr_params[5] = self.weights[1][0]
-		curr_params[6] = self.weights[1][1]
-		curr_params[7] = self.weights[1][2]
-		curr_params[8] = self.weights[1][3]
-		curr_params[9] = self.biases[1]
-
-		grad = grad_function(curr_params)
-		# print "Grad: ", grad
-		self.update_weights(grad)
-
-
+		global replay_states, replay_actions, replay_rewards, replay_next_states, replay_return_from_states
+		#TODO: Update to run for entire batch at once
+		for i in xrange(len(replay_states)):
+			action = self.to_action_input(replay_actions[i])
+			# print "Action coming out: ", action
+			# print "Return from state: ", replay_return_from_states[i]
+			state = np.asarray(replay_states[i])
+			state = state.reshape(1,4)
+			# softmax_out = self.sess.run(self.policy, feed_dict={self.x:state})
+			# # print "Softmax output: ", softmax_out
+			# log_action_prob_out = self.sess.run(self.log_action_probability, feed_dict={self.x:state, self.action_input: action})
+			# # print "Log prob: ", log_action_prob_out
+			# loss_out = self.sess.run(self.loss, feed_dict={self.x:state, self.action_input: action, self.y: replay_return_from_states[i]})
+			# # print "Loss: ", loss_out
+			_, error_value = self.sess.run([self.optim, self.loss], feed_dict={self.x: state, self.action_input: action, self.y: replay_return_from_states[i] })
+			# print "Error: ", error_value
+		# print "Model after episode: Weights {}, Biases {} ".format(self.sess.run(self.weights), self.sess.run(self.biases))
 	
-	def softmax(self, state, weights, biases):
-		prob_actions = [0]*self.action_space_n
-
-		prob_actions = ad.admath.exp(np.add(np.dot(weights, state), biases))
-		
-		prob_actions = np.true_divide(prob_actions, sum(prob_actions))
-		
-		return prob_actions
-
-
+	def softmax_policy(self, state, weights, biases):
+		policy = tf.nn.softmax(tf.matmul(state, weights) + biases)
+		return policy
 
 	def choose_action(self, state):
 		#Use softmax policy to sample
-		prob_actions = self.softmax(state, self.weights, self.biases)
-		action = np.random.choice([0,1],1,replace=True, p=prob_actions)
-		return action[0]
+		state = np.asarray(state)
+		state = state.reshape(1,4)
+		softmax_out = self.sess.run(self.policy, feed_dict={self.x:state})
+		# action = max(softmax_out[0])
+		# print "Softmax output: ",  softmax_out[0]
+		# action = softmax_out[0].tolist().index(max(softmax_out[0])) #Choose best possible action
+		action = np.random.choice([0,1], 1, replace = True, p = softmax_out[0])[0] #Sample action from prob density
+		return action
 
 	def update_memory(self, time, curr_state, action, reward, next_state):
 		global replay_states, replay_actions, replay_rewards, replay_next_states, replay_return_from_states
@@ -146,15 +135,20 @@ class Actor:
 			#Iterate through the replay memory  and update the final return for all states 
 			for i in xrange(len(replay_return_from_states)):
 				replay_return_from_states[i] += reward
-		# print "Timestep: ", time
-		# print replay_states
-		# print replay_actions
-		# print replay_return_from_states
+
 	
 	def reset_memory(self):
 		global replay_states, replay_actions, replay_rewards, replay_next_states, replay_return_from_states
 		del replay_states[:], replay_actions[:], replay_rewards[:], replay_next_states[:], replay_return_from_states[:]
-		
+	
+	def to_action_input(self, action):
+		action_input = [0]*self.action_space_n
+		# print "Action going in: ", action
+		action_input[action] = 1
+		action_input = np.asarray(action_input)
+		action_input = action_input.reshape(1, self.action_space_n)
+		return action_input
+
 
 
 
@@ -211,10 +205,21 @@ def main():
 	# env.render()
 	actor = Actor(env)
 	# critic = Critic()
-	numEpisodes = 20000
+	numEpisodes = 5000
+	global replay_states, replay_actions, replay_rewards, replay_next_states, replay_return_from_states
 	for i in xrange(numEpisodes):
-		actor.rollout_policy(200, i+1)
+		actor.rollout_policy(200, i+1)	
 		actor.update_policy()
+		# print "Average Reward Across Episodes = {}".format(rewards_from_episodes/numEpisodes)
+		# print "States: ", replay_states
+		# print "Actions:", replay_actions
+		# print "rewards:", replay_rewards
+		# print "Next states: ", replay_next_states
+		# print "Return from states:", replay_return_from_states
+	
+	
+		
+
 
 
 
