@@ -28,9 +28,7 @@ class Actor:
 		self.action_space = env.action_space
 		self.action_space_n = self.action_space.n
 		#Learning parameters
-		self.learning_rate = 0.1
-		# self.weights = np.random.randn(self.action_space_n,len(self.observation_space.high)) #Initialize random weight
-		# self.biases = np.random.randn(self.action_space_n)
+		self.learning_rate = 0.01
 		#Declare tf graph
 		self.graph = tf.Graph()
 		#Build the graph when instantiated
@@ -38,18 +36,17 @@ class Actor:
 			self.weights = tf.Variable(tf.random_normal([len(self.observation_space.high), self.action_space_n]))
 			self.biases = tf.Variable(tf.random_normal([self.action_space_n]))
 
-		# 	#Inputs
+			#Inputs
 			self.x = tf.placeholder("float", [None, len(self.observation_space.high)])#State input
 			self.y = tf.placeholder("float") #Advantage input
 			self.action_input = tf.placeholder("float", [None, self.action_space_n]) #Input action to return the probability associated with that action
 
 			self.policy = self.softmax_policy(self.x, self.weights, self.biases) #Softmax policy
 		
-		# 	# self.log_policy = tf.log(self.policy)
 			self.log_action_probability = tf.reduce_sum(self.action_input*tf.log(self.policy))
 			self.loss = -self.log_action_probability*self.y #Loss is score function times advantage
 			self.optim = tf.train.GradientDescentOptimizer(self.learning_rate).minimize(self.loss)
-		# 	#Initializing all variables
+			#Initializing all variables
 			self.init = tf.initialize_all_variables()
 			print ("Policy Graph Constructed")
 		self.sess = tf.Session(graph = self.graph)
@@ -59,9 +56,6 @@ class Actor:
 	def rollout_policy(self, timeSteps, episodeNumber):
 		"""Rollout policy for one episode, update the replay memory and return total reward"""
 		#First clear the current replay memory
-		# print "Weights: ", self.weights
-		# print "Biases: ", self.biases
-
 		self.reset_memory()
 		total_reward = 0
 		curr_state = self.env.reset()
@@ -80,7 +74,6 @@ class Actor:
 				print "Episode {} ended at step {} with total reward {}".format(episodeNumber, time, total_reward)
 				break
 			curr_state = next_state
-		# print self.sess.run(self.weights), self.sess.run(self.biases)
 		return total_reward
 
 
@@ -114,7 +107,6 @@ class Actor:
 		state = np.asarray(state)
 		state = state.reshape(1,4)
 		softmax_out = self.sess.run(self.policy, feed_dict={self.x:state})
-		# action = max(softmax_out[0])
 		# print "Softmax output: ",  softmax_out[0]
 		# action = softmax_out[0].tolist().index(max(softmax_out[0])) #Choose best possible action
 		action = np.random.choice([0,1], 1, replace = True, p = softmax_out[0])[0] #Sample action from prob density
@@ -152,46 +144,50 @@ class Actor:
 
 
 
-# class Critic:
-# 	def __init__():
-# 		self.n_input = 4 #TODO replace with observation space size
-# 		self.n_hidden_1 = 100
-# 		self.n_hidden_2 = 50
-# 		self.n_hidden_3 = 25
-# 		self.weights = {
-# 			'h1': tf.Variable(tf.random_normal([self.n_input, self.n_hidden_1])),
-# 			'h2': tf.Variable(tf.random_normal([self.n_hidden_1, self.n_hidden_2])),
-# 			'h3': tf.Variable(tf.random_normal([self.n_hidden_2, self.n_hidden_3]))
-# 			'out': tf.Variable(tf.random_normal([n_hidden_2, 1]))
-# 		}
-# 		self.biases = {
-#     		'b1': tf.Variable(tf.random_normal([self.n_hidden_1])),
-#     		'b2': tf.Variable(tf.random_normal([self.n_hidden_2])),
-#     		'b3': tf.Variable(tf.random_normal([self.n_hidden_3]))
-#     		'out': tf.Variable(tf.random_normal([1]))
-# 		}
+class Critic:
+	def __init__():
+		self.n_input = 4 #TODO replace with observation space size
+		self.n_hidden_1 = 100
+		self.n_hidden_2 = 50
+		self.n_hidden_3 = 25
+		self.weights = {
+			'h1': tf.Variable(tf.random_normal([self.n_input, self.n_hidden_1])),
+			'h2': tf.Variable(tf.random_normal([self.n_hidden_1, self.n_hidden_2])),
+			'h3': tf.Variable(tf.random_normal([self.n_hidden_2, self.n_hidden_3]))
+			'out': tf.Variable(tf.random_normal([n_hidden_2, 1]))
+		}
+		self.biases = {
+    		'b1': tf.Variable(tf.random_normal([self.n_hidden_1])),
+    		'b2': tf.Variable(tf.random_normal([self.n_hidden_2])),
+    		'b3': tf.Variable(tf.random_normal([self.n_hidden_3]))
+    		'out': tf.Variable(tf.random_normal([1]))
+		}
+		self.graph = tf.Graph()
+		construct_graph()
 
-# 	def construct_graph():	
-# 		#Graph input
-# 		x = tf.placeholder("float", [None, self.n_input])
-# 		y = tf.placeholder("float", [None, 1])
-# 		pred = self.multilayer_perceptron(x, self.weights, self.biases)
-# 		cost = 
-# 		optimizer = 
-# 	def multilayer_perceptron(x, weights, biases):
-# 		#First hidden layer
-# 		layer_1 = tf.add(tf.matmul(x, self.weights['h1'], self.biases['b1']))
-# 		layer_1 = tf.nn.............
-# 		#Second hidden layer
-# 		layer_2 = 
+	def construct_graph():	
+		#Graph input
 
-# 		#Third hidden layer
-# 		layer_3 = 
+		# x = tf.placeholder("float", [None, self.n_input])
+		# y = tf.placeholder("float", [None, 1])
+		# pred = self.multilayer_perceptron(x, self.weights, self.biases)
+		# cost = 
+		# optimizer = 
+		
+	def multilayer_perceptron(x, weights, biases):
+		#First hidden layer
+		layer_1 = tf.add(tf.matmul(x, self.weights['h1'], self.biases['b1']))
+		layer_1 = tf.nn.............
+		#Second hidden layer
+		layer_2 = 
 
-# 		#Output layer
-# 		out_layer = tf.matmul(layer_3, weights['out']) + biases['out']
-# 		return out_layer
-# 	def 
+		#Third hidden layer
+		layer_3 = 
+
+		#Output layer
+		out_layer = tf.matmul(layer_3, weights['out']) + biases['out']
+		return out_layer
+	def 
 
 
 # def ActorCriticLearner():
@@ -205,17 +201,11 @@ def main():
 	# env.render()
 	actor = Actor(env)
 	# critic = Critic()
-	numEpisodes = 5000
+	numEpisodes = 10000
 	global replay_states, replay_actions, replay_rewards, replay_next_states, replay_return_from_states
 	for i in xrange(numEpisodes):
 		actor.rollout_policy(200, i+1)	
 		actor.update_policy()
-		# print "Average Reward Across Episodes = {}".format(rewards_from_episodes/numEpisodes)
-		# print "States: ", replay_states
-		# print "Actions:", replay_actions
-		# print "rewards:", replay_rewards
-		# print "Next states: ", replay_next_states
-		# print "Return from states:", replay_return_from_states
 	
 	
 		
