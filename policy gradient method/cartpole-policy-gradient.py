@@ -21,14 +21,13 @@ replay_next_states = []
 replay_return_from_states = []
 
 class Actor:
-	def __init__(self, env):
+	def __init__(self, env, ):
 		self.env = env
 		self.observation_space = env.observation_space
 		self.action_space = env.action_space
 		self.action_space_n = self.action_space.n
 		#Learning parameters
-		# self.learning_rate = 0.001 w
-		self.learning_rate = 0.001
+		self.learning_rate = 0.01 
 		#Declare tf graph
 		self.graph = tf.Graph()
 		#Build the graph when instantiated
@@ -46,7 +45,6 @@ class Actor:
 		
 			self.log_action_probability = tf.reduce_sum(self.action_input*tf.log(self.policy))
 			self.loss = -self.log_action_probability*self.y #Loss is score function times advantage
-			# self.optim = tf.train.GradientDescentOptimizer(self.learning_rate).minimize(self.loss)
 			self.optim = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
 			#Initializing all variables
 			self.init = tf.initialize_all_variables()
@@ -68,10 +66,7 @@ class Actor:
 		episode_return_from_states = []
 		
 		for time in xrange(timeSteps):
-			# self.env.render()	
 			action = self.choose_action(curr_state)
-			# action = self.env.action_space.sample()
-			# print "Action selected: ", action
 			next_state, reward, done, info = self.env.step(action)
 			#Update the total reward
 			total_reward += reward
@@ -111,19 +106,12 @@ class Actor:
 			advantage_vector = advantage_vectors[i]
 			for j in xrange(len(states)):
 				action = self.to_action_input(actions[j])
-				# print "Action coming out: ", action
-				# print "Return from state: ", replay_return_from_states[i]
+
 				state = np.asarray(states[j])
 				state = state.reshape(1,4)
-				# softmax_out = self.sess.run(self.policy, feed_dict={self.x:state})
-				# # print "Softmax output: ", softmax_out
-				# log_action_prob_out = self.sess.run(self.log_action_probability, feed_dict={self.x:state, self.action_input: action})
-				# # print "Log prob: ", log_action_prob_out
-				# loss_out = self.sess.run(self.loss, feed_dict={self.x:state, self.action_input: action, self.y: replay_return_from_states[i]})
-				# # print "Loss: ", loss_out
+
 				_, error_value = self.sess.run([self.optim, self.loss], feed_dict={self.x: state, self.action_input: action, self.y: advantage_vector[j] })
-				# print "Error: ", error_value
-			# print "Model after episode: Weights {}, Biases {} ".format(self.sess.run(self.weights), self.sess.run(self.biases))
+	
 	
 	def softmax_policy(self, state, weights, biases):
 		policy = tf.nn.softmax(tf.matmul(state, weights) + biases)
@@ -134,12 +122,7 @@ class Actor:
 		state = np.asarray(state)
 		state = state.reshape(1,4)
 		softmax_out = self.sess.run(self.policy, feed_dict={self.x:state})
-		# print "Softmax output: ",  softmax_out[0]
-		# action = softmax_out[0].tolist().index(max(softmax_out[0])) #Choose best possible action
-		if softmax_out[0][0] <= 0 or softmax_out[0][0] > 1 or softmax_out[0][1] <= 0 or softmax_out[0][1] > 1:
-			print "Gadbad ho sakti hai", softmax_out[0]
 		action = np.random.choice([0,1], 1, replace = True, p = softmax_out[0])[0] #Sample action from prob density
-
 		return action
 
 	def update_memory(self, episode_states, episode_actions, episode_rewards, episode_next_states, episode_return_from_states):
@@ -176,43 +159,29 @@ class Critic:
 		self.action_space_n = self.action_space.n
 		self.n_input = len(self.observation_space.high)
 		self.n_hidden_1 = 20
-		self.n_hidden_2 = 50
-		self.n_hidden_3 = 25
 		#Learning Parameters
-		self.learning_rate = 0.008 #w
+		self.learning_rate = 0.008 
 		# self.learning_rate = 0.1
-		# self.num_epochs = 20 w
-		# self.batch_size = 170 w
 		self.num_epochs = 20
 		self.batch_size = 170
 		#Discount factor
-		# self.discount = 0.90 w
 		self.discount = 0.90
 		self.graph = tf.Graph()
 		with self.graph.as_default():
 			tf.set_random_seed(1234)
 			self.weights = {
 			'h1': tf.Variable(tf.random_normal([self.n_input, self.n_hidden_1])),
-			# 'h2': tf.Variable(tf.random_normal([self.n_hidden_1, self.n_hidden_2])),
-			# 'h3': tf.Variable(tf.random_normal([self.n_hidden_2, self.n_hidden_3])),
 			'out': tf.Variable(tf.random_normal([self.n_hidden_1, 1]))
 			}
 			self.biases = {
     		'b1': tf.Variable(tf.random_normal([self.n_hidden_1])),
-    		# 'b2': tf.Variable(tf.random_normal([self.n_hidden_2])),
-    		# 'b3': tf.Variable(tf.random_normal([self.n_hidden_3])),
     		'out': tf.Variable(tf.random_normal([1]))
 			}
 			self.state_input = self.x = tf.placeholder("float", [None, len(self.observation_space.high)])#State input
 			self.return_input = tf.placeholder("float") #Target return
-			# self.keep_prob = tf.placeholder("float")
-
-			self.value_pred = self.multilayer_perceptron(self.state_input, self.weights, self.biases)
-			
-			self.loss = tf.reduce_mean(tf.pow(self.value_pred - self.return_input,2))
-			# self.optim = tf.train.GradientDescentOptimizer(self.learning_rate).minimize(self.loss)
+			self.value_pred = self.multilayer_perceptron(self.state_input, self.weights, self.biases)			
+			self.loss = tf.reduce_mean(tf.pow(self.value_pred - self.return_input,2))			
 			self.optim = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
-
 			init = tf.initialize_all_variables()
 		print("Value Graph Constructed")
 		self.sess = tf.Session(graph = self.graph)
@@ -224,15 +193,7 @@ class Critic:
 		layer_1 = tf.add(tf.matmul(x, weights['h1']), biases['b1'])
 		layer_1 = tf.nn.tanh(layer_1)
 		#Second hidden layer
-		# layer_2 = tf.add(tf.matmul(layer_1, weights['h2']), biases['b2'])
-		# layer_2 = tf.nn.tanh(layer_2)
-		# #Third hidden layer
-		# layer_3 = tf.add(tf.matmul(layer_2, weights['h3']), biases['b3'])
-		# layer_3 = tf.nn.tanh(layer_3)
-		#Output layer
-		# layer_1_drop = tf.nn.dropout(layer_1, keep_prob)
 		out_layer = tf.matmul(layer_1, weights['out']) + biases['out']
-
 		return out_layer
 
 	def update_value_estimate(self):
@@ -263,14 +224,16 @@ class Critic:
 			reward = rewards[i]
 			state_value = self.sess.run(self.value_pred, feed_dict={self.state_input:state})
 			next_state_value = self.sess.run(self.value_pred, feed_dict={self.state_input:next_state})
+			#Current implementation uses TD(0) advantage
+			#TODO: Apply Generalized Advantage Estimation
 			advantage = reward + self.discount*next_state_value - state_value
 			advantage_vector.append(advantage)
+
 		return advantage_vector
 
 
 	def get_next_batch(self, batch_size, states_data, returns_data):
-		# states_data = np.asarray(states_data)
-		# returns_data = np. asarray(returns_data)
+		#Return mini-batch of transitions from replay data
 		all_states = []
 		all_returns = []
 		for i in xrange(len(states_data)):
@@ -281,11 +244,7 @@ class Critic:
 				all_returns.append(episode_returns[j])
 		all_states = np.asarray(all_states)
 		all_returns = np.asarray(all_returns)
-		
-
 		randidx = np.random.randint(all_states.shape[0], size=batch_size)
-		# print all_returns.shape, all_states.shape
-		# print batch_size
 		batch_states = all_states[randidx, :]
 		batch_returns = all_returns[randidx]
 		return batch_states, batch_returns
@@ -293,49 +252,65 @@ class Critic:
 
 
 
-# def ActorCriticLearner():
+class ActorCriticLearner:
+	def __init__(self, env, max_episodes, episodes_before_update):
+		self.env = env
+		self.actor = Actor(self.env)
+		self.critic = Critic(self.env)
+		
+
+		#Learner parameters
+		self.max_episodes = max_episodes
+		self.episodes_before_update = episodes_before_update
+
+
+	def learn(self):
+		
+		advantage_vectors = []
+		sum_reward = 0
+		update = True			
+		for i in xrange(self.max_episodes):
+			episode_states, episode_actions, episode_rewards, episode_next_states, episode_return_from_states, episode_total_reward = self.actor.rollout_policy(200, i+1)	
+			advantage_vector = self.critic.get_advantage_vector(episode_states, episode_rewards, episode_next_states)
+			advantage_vectors.append(advantage_vector)
+			sum_reward += episode_total_reward
+			if (i+1)%self.episodes_before_update == 0:
+				avg_reward = sum_reward/self.episodes_before_update
+				print "Current {} episode average reward: {}".format(self.episodes_before_update, avg_reward)
+				#In this part of the code I try to reduce the effects of randomness leading to oscillations in my 
+				#network by sticking to a solution if it is close to final solution.
+				#If the average reward for past batch of episodes exceeds that for solving the environment, continue with it
+				if avg_reward >= 195: #This is the criteria for having solved the environment by Open-AI Gym
+					update = False
+				else:
+					update = True
+
+				if update:
+					print "Updating"
+					self.actor.update_policy(advantage_vectors)
+					self.critic.update_value_estimate()
+				else:
+					print "Good Solution, not updating"
+				#Delete the data collected so far
+				del advantage_vectors[:]
+				self.actor.reset_memory()
+				sum_reward = 0
+		
 
 	
 def main():
 	env = gym.make('CartPole-v0')
 	env.seed(1234)
 	np.random.seed(1234)
-	env.monitor.start('./cartpole-pg-experiment-11')
-	# env.render()
-	actor = Actor(env)
-	critic = Critic(env)
-	numEpisodes = 6000
-	numEpisodesBeforeUpdate = 10
-	advantage_vectors = []
-	sum_reward = 0
-	update = True
-	global replay_states, replay_actions, replay_rewards, replay_next_states, replay_return_from_states
-	for i in xrange(numEpisodes):
-		episode_states, episode_actions, episode_rewards, episode_next_states, episode_return_from_states, episode_total_reward = actor.rollout_policy(200, i+1)	
-		advantage_vector = critic.get_advantage_vector(episode_states, episode_rewards, episode_next_states)
-		advantage_vectors.append(advantage_vector)
-		sum_reward += episode_total_reward
-		if (i+1)%numEpisodesBeforeUpdate == 0:
-			avg_reward = sum_reward/numEpisodesBeforeUpdate
-			print "Current average reward: {}".format(avg_reward)
-			if avg_reward >= 195:
-				update = False
-			else:
-				update = True
+	env.monitor.start('./cartpole-pg-experiment-15')
+	#Learning Parameters
+	max_episodes = 1000
+	episodes_before_update = 2
 
-			if update:
-				print "Updating"
-				actor.update_policy(advantage_vectors)
-				critic.update_value_estimate()
-			else:
-				print "Good Solution, not updating"
-			del advantage_vectors[:]
-			actor.reset_memory()
-			sum_reward = 0
+
+	ac_learner = ActorCriticLearner(env, max_episodes, episodes_before_update)
+	ac_learner.learn()
 	env.monitor.close()
-	# gym.upload("/cartpole-pg-experiment-1", algorithm_id="policy_gradient", api_key="sk_Kvr9a5sSeWiSPhrXkyY4g")
-
-	
 	
 
 if __name__=="__main__":
