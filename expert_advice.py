@@ -2,6 +2,11 @@
 #Implements weighted majority and randomized weighted majority algorithms for prediction under
 #expert advice on deterministic, stochastic and adverserial environments with three different experts 
 import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+
+mpl.rcParams['axes.color_cycle'] = ['r', 'b', 'k', 'c'] 
+
 class Nature:
 	def __init__(self, num_experts):
 		self.num_experts = num_experts
@@ -41,6 +46,9 @@ class AdverserialNature(Nature):
 		prediction = np.sign(np.sum(np.multiply(weights, observation)))
 		return -prediction
 
+#Class characterizing the different kinds of experts
+#Currently there are the folowing kinds of experts possible:
+#Optimistic (always win), Pessimistic(always lose), Match Based(base on round number)
 class Experts:
 	def __init__(self, expert_type):
 		self.expert_type = expert_type
@@ -53,6 +61,7 @@ class Experts:
 			return 1 if round_number%2 == 0 else -1
 	def expert_loss(self, true_label, round_number):
 		return 0 if(true_label - self.get_advice(round_number)) == 0 else 1
+
 
 
 class Learner:
@@ -71,6 +80,8 @@ class Learner:
 		#to prediction scheme (WMA or RWMA) and nature gives label
 		#(might not be true one if adverserial nature) 
 		total_learner_loss = 0
+		learner_loss_plt = []
+		experts_loss_plt = []
 		for round_number in xrange(total_prediction_rounds):
 			#Ask nature for observation which is expert advice
 			observation = self.nature.get_observation(round_number)
@@ -95,7 +106,10 @@ class Learner:
 			total_learner_loss += learner_loss
 			self.update_weights(expert_losses)
 			print "Prediction: {}, Label: {}, Learner Loss: {}, Weights: {}".format(prediction, label, learner_loss, self.weights)
-		return total_learner_loss
+			#Update data structures for plotting
+			learner_loss_plt.append(learner_loss)
+			experts_loss_plt.append(expert_losses)
+		return total_learner_loss, learner_loss_plt, experts_loss_plt
 	
 	#Function provides prediction according to weighted majority algorithm
 	def weighted_majority(self, observation):
@@ -123,14 +137,76 @@ class Learner:
 			new_weights[idx[0]] = weight*decrease_factor
 		self.weights = new_weights
 
+#Calculates regret versus every expert for one episode and returns 
+def calculate_episode_regrets(total_prediction_rounds, learner_loss, experts_loss):
+
+	episode_regrets = [0]*len(experts_loss[0])
+	for i in xrange(len(experts_loss[0])):
+		expert_i_loss = np.asarray(experts_loss)[:,[i]]
+		cumulative_expert_loss = [0]*len(expert_i_loss)
+		cumulative_learner_loss = [0]*len(expert_i_loss) #TODO: don't calculate multiple times
+		for j in xrange(1, len(expert_i_loss)):
+			cumulative_expert_loss[j] = cumulative_expert_loss[j-1] + expert_i_loss[j]
+			cumulative_learner_loss[j] = cumulative_learner_loss[j-1] + learner_loss[j]
+		episode_regrets[i] = np.subtract(cumulative_learner_loss, cumulative_expert_loss)
+	return np.transpose(episode_regrets)
+
+#Function that plots loss of learner vs all experts at every timestep for an episode of total_prediction_rounds
+def plot_episode_losses(total_prediction_rounds, learner_loss, experts_loss):
+	
+	#Plot losses during the episode in every step for learner and all the experts
+	t = np.linspace(0, total_prediction_rounds-1, total_prediction_rounds)
+	#Instantiate figure
+	fig, axs = plt.subplots(len(experts_loss[0]),1, figsize=(12,10))
+	#Plot the learner loss
+	# plt.plot(t, learner_loss)
+	#Iterate through the expert losses and plot them
+	for i in xrange(len(experts_loss[0])):
+		expert_i_loss = np.asarray(experts_loss)[:,[i]]
+		axs[i].set_ylim([-0.5, 1.5])
+		axs[i].plot(t, expert_i_loss, 'r', label="Expert {} episode loss".format(i))
+		axs[i].plot(t, learner_loss, 'k', label="Learner episode loss")
+		axs[i].legend()
+		axs[i].set_xlabel("Prediction Rounds")
+		axs[i].set_ylabel("Loss at timestep, {0,1}")
+	plt.draw()
+
+#Function that plots reget of learner vs all experts at every timestep for an episode of total_prediction_rounds
+def plot_episode_regrets(total_prediction_rounds, episode_regrets):
+	#Go about plotting episode regrets
+	#Plot losses during the episode in every step for learner and all the experts
+	t = np.linspace(0, total_prediction_rounds-1, total_prediction_rounds)
+	#Instantiate figure
+	fig, axs = plt.subplots(len(episode_regrets[0]),1, figsize=(12,10))
+	#Iterate through the expert losses and plot them
+	for i in xrange(len(episode_regrets[0])):
+		expert_i_regret= np.asarray(episode_regrets)[:,[i]]
+		axs[i].set_ylim([-100, 100])
+		axs[i].plot(t, expert_i_regret, 'r', label="Regret vs Expert {}".format(i))
+		axs[i].legend()
+		axs[i].set_xlabel("Prediction Rounds")
+		axs[i].set_ylabel("Regret at timestep, {0,1}")
+	plt.draw()
+
 
 def main():
 
 	total_prediction_rounds = 100
-	nature_1 = AdverserialNature(3)
-	weighted_majority_learner = Learner(nature_1, "randomized_weighted_majority", True)
-	episode_learner_loss = weighted_majority_learner.learn(total_prediction_rounds)
+	#Choose the kind of nature and nuber of experts in that nature (3 or 4)
+	nature = DeterministicNature(3)
+	#Choose kind of learner and whether nature is adverserial
+	weighted_majority_learner = Learner(nature, "weighted_majority", False)
+	#Lear for one episode of length total_prediction_rounds
+	episode_learner_loss, episode_learner_loss_plt, episode_experts_loss_plt = weighted_majority_learner.learn(total_prediction_rounds)
 	print "Episode Loss = {}".format(episode_learner_loss)
+	#Plot the episode losses
+	plot_episode_losses(total_prediction_rounds, episode_learner_loss_plt, episode_experts_loss_plt)
+	#Calculae the regrets of learner vs all the experts
+	episode_regrets = calculate_episode_regrets(total_prediction_rounds, episode_learner_loss_plt, episode_experts_loss_plt)
+	#Plot the rerets of learner vs all the experts
+	plot_episode_regrets(total_prediction_rounds, episode_regrets)
+	#At the end call plt.show() to ensure that the graph windows don't close
+	plt.show()
 	
 if __name__ == "__main__":
 	main()
