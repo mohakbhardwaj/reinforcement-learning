@@ -3,9 +3,8 @@
 #expert advice on deterministic, stochastic and adverserial environments with three different experts 
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib as mpl
 
-mpl.rcParams['axes.color_cycle'] = ['r', 'b', 'k', 'c'] 
+
 
 class Nature:
 	def __init__(self, num_experts):
@@ -15,6 +14,7 @@ class Nature:
 	def get_observation(self, matchNumber):
 		observation = []
 		for expert in self.experts:
+			#Get advice based on match number +1 as match number 0 is first match
 			observation.append(expert.get_advice(matchNumber))
 		return observation
 	
@@ -58,7 +58,7 @@ class Experts:
 		elif self.expert_type == "pessismistic":
 			return -1
 		elif self.expert_type == "matchbased":
-			return 1 if round_number%2 == 0 else -1
+			return 1 if (round_number+1)%2 == 0 else -1
 	def expert_loss(self, true_label, round_number):
 		return 0 if(true_label - self.get_advice(round_number)) == 0 else 1
 
@@ -128,8 +128,7 @@ class Learner:
 	
 	#Function that updates weights 
 	def update_weights(self,expert_losses):
-		#Apply multiplicative update to the wieghts to get new weights
-		
+		#Apply multiplicative update to the wieghts to get new weights		
 		new_weights = [0]*self.nature.num_experts
 		#Only the experts who make a wrong prediction should be penalized
 		for idx, weight in np.ndenumerate(self.weights):			
@@ -139,16 +138,20 @@ class Learner:
 
 #Calculates regret versus every expert for one episode and returns 
 def calculate_episode_regrets(total_prediction_rounds, learner_loss, experts_loss):
-
 	episode_regrets = [0]*len(experts_loss[0])
 	for i in xrange(len(experts_loss[0])):
 		expert_i_loss = np.asarray(experts_loss)[:,[i]]
-		cumulative_expert_loss = [0]*len(expert_i_loss)
-		cumulative_learner_loss = [0]*len(expert_i_loss) #TODO: don't calculate multiple times
-		for j in xrange(1, len(expert_i_loss)):
-			cumulative_expert_loss[j] = cumulative_expert_loss[j-1] + expert_i_loss[j]
-			cumulative_learner_loss[j] = cumulative_learner_loss[j-1] + learner_loss[j]
-		episode_regrets[i] = np.subtract(cumulative_learner_loss, cumulative_expert_loss)
+		first_regret = learner_loss[0] - expert_i_loss[0][0]
+		r = []
+		r.append(first_regret)
+		for j in xrange(1, len(expert_i_loss)):			
+			cumulative_expert_loss = 0
+			cumulative_learner_loss = 0
+			for k in xrange(j):
+				cumulative_expert_loss += expert_i_loss[k][0]
+				cumulative_learner_loss += learner_loss[k]
+			r.append((cumulative_learner_loss - cumulative_expert_loss)/(j*1.))		
+		episode_regrets[i] = np.asarray(r)	
 	return np.transpose(episode_regrets)
 
 #Function that plots loss of learner vs all experts at every timestep for an episode of total_prediction_rounds
@@ -181,11 +184,11 @@ def plot_episode_regrets(total_prediction_rounds, episode_regrets):
 	#Iterate through the expert losses and plot them
 	for i in xrange(len(episode_regrets[0])):
 		expert_i_regret= np.asarray(episode_regrets)[:,[i]]
-		axs[i].set_ylim([-100, 100])
+		# axs[i].set_ylim([-100, 100])
 		axs[i].plot(t, expert_i_regret, 'r', label="Regret vs Expert {}".format(i))
 		axs[i].legend()
 		axs[i].set_xlabel("Prediction Rounds")
-		axs[i].set_ylabel("Regret at timestep, {0,1}")
+		axs[i].set_ylabel("Average Regret at timestep")
 	plt.draw()
 
 
@@ -193,9 +196,9 @@ def main():
 
 	total_prediction_rounds = 100
 	#Choose the kind of nature and nuber of experts in that nature (3 or 4)
-	nature = DeterministicNature(3)
+	nature = StochasticNature(3)
 	#Choose kind of learner and whether nature is adverserial
-	weighted_majority_learner = Learner(nature, "weighted_majority", False)
+	weighted_majority_learner = Learner(nature, "randomized_weighted_majority", False)
 	#Lear for one episode of length total_prediction_rounds
 	episode_learner_loss, episode_learner_loss_plt, episode_experts_loss_plt = weighted_majority_learner.learn(total_prediction_rounds)
 	print "Episode Loss = {}".format(episode_learner_loss)
