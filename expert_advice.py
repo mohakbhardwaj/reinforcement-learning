@@ -21,6 +21,7 @@ class Nature:
 	def get_label(self):
 		label = 0
 		return label
+
 	def get_expert_losses(self, label, round_number):
 		expert_losses = []
 		for expert in self.experts:
@@ -36,7 +37,7 @@ class StochasticNature(Nature):
 class DeterministicNature(Nature):
 	#Returns the same answer at each timestep as of now
 	def get_label(self):
-		return -1
+		return 1
 
 class AdverserialNature(Nature):
 	def get_label(self, weights, observation):
@@ -71,7 +72,7 @@ class Learner:
 		self.weights = [1]*self.nature.num_experts
 		self.prediction_type = prediction_type
 		#Learning parameters
-		self.ita = 0.1
+		self.ita = 0.2
 
 	#Generic function that can incorporate different types of learners
 	def learn(self, total_prediction_rounds):
@@ -136,23 +137,29 @@ class Learner:
 			new_weights[idx[0]] = weight*decrease_factor
 		self.weights = new_weights
 
-#Calculates regret versus every expert for one episode and returns 
-def calculate_episode_regrets(total_prediction_rounds, learner_loss, experts_loss):
-	episode_regrets = [0]*len(experts_loss[0])
-	for i in xrange(len(experts_loss[0])):
-		expert_i_loss = np.asarray(experts_loss)[:,[i]]
-		first_regret = learner_loss[0] - expert_i_loss[0][0]
-		r = []
-		r.append(first_regret)
-		for j in xrange(1, len(expert_i_loss)):			
-			cumulative_expert_loss = 0
-			cumulative_learner_loss = 0
-			for k in xrange(j):
-				cumulative_expert_loss += expert_i_loss[k][0]
-				cumulative_learner_loss += learner_loss[k]
-			r.append((cumulative_learner_loss - cumulative_expert_loss)/(j*1.))		
-		episode_regrets[i] = np.asarray(r)	
-	return np.transpose(episode_regrets)
+
+def calculate_average_regret(total_prediction_rounds, learner_loss, experts_loss):
+	#First calculate cumulative losses
+	experts_loss = np.asarray(experts_loss)
+	#print experts_loss
+	cumulative_learner_loss = []
+	cumulative_experts_loss = []
+	cl_experts = [0]*len(experts_loss[0])
+	for i in xrange(total_prediction_rounds):
+		cumulative_learner_loss.append(sum(learner_loss[0:i+1]))
+		for k in xrange(len(experts_loss[0])):
+			cl_experts[k] = sum(experts_loss[0:i+1,k])
+		cumulative_experts_loss.append(list(cl_experts))
+	#Calculate the regrets
+	episode_regrets = []
+	#print cumulative_learner_loss
+	
+	for i in xrange(total_prediction_rounds):
+		best_expert_loss = min(cumulative_experts_loss[i])
+		#print best_expert_loss, cumulative_learner_loss[i]
+		episode_regrets.append((cumulative_learner_loss[i] - best_expert_loss)/(i+1.))
+	return episode_regrets
+
 
 #Function that plots loss of learner vs all experts at every timestep for an episode of total_prediction_rounds
 def plot_episode_losses(total_prediction_rounds, learner_loss, experts_loss):
@@ -180,15 +187,19 @@ def plot_episode_regrets(total_prediction_rounds, episode_regrets):
 	#Plot losses during the episode in every step for learner and all the experts
 	t = np.linspace(0, total_prediction_rounds-1, total_prediction_rounds)
 	#Instantiate figure
-	fig, axs = plt.subplots(len(episode_regrets[0]),1, figsize=(12,10))
+	# fig, axs = plt.subplots(len(episode_regrets),1, figsize=(12,10))
 	#Iterate through the expert losses and plot them
-	for i in xrange(len(episode_regrets[0])):
-		expert_i_regret= np.asarray(episode_regrets)[:,[i]]
-		# axs[i].set_ylim([-100, 100])
-		axs[i].plot(t, expert_i_regret, 'r', label="Regret vs Expert {}".format(i))
-		axs[i].legend()
-		axs[i].set_xlabel("Prediction Rounds")
-		axs[i].set_ylabel("Average Regret at timestep")
+	# for i in xrange(len(episode_regrets[0])):
+	# 	expert_i_regret= np.asarray(episode_regrets)[:,[i]]
+	# 	# axs[i].set_ylim([-100, 100])
+	# 	axs[i].plot(t, expert_i_regret, 'r', label="Regret vs Expert {}".format(i))
+	# 	axs[i].legend()
+	# 	axs[i].set_xlabel("Prediction Rounds")
+	# 	axs[i].set_ylabel("Average Regret at timestep")
+	plt.figure()
+	plt.plot(t, episode_regrets, 'k', label = "Average Regret")
+	plt.xlabel("Prediction Rounds")
+	plt.ylabel("Average Regret")
 	plt.draw()
 
 
@@ -205,7 +216,8 @@ def main():
 	#Plot the episode losses
 	plot_episode_losses(total_prediction_rounds, episode_learner_loss_plt, episode_experts_loss_plt)
 	#Calculae the regrets of learner vs all the experts
-	episode_regrets = calculate_episode_regrets(total_prediction_rounds, episode_learner_loss_plt, episode_experts_loss_plt)
+	episode_regrets = calculate_average_regret(total_prediction_rounds, episode_learner_loss_plt, episode_experts_loss_plt)
+	
 	#Plot the rerets of learner vs all the experts
 	plot_episode_regrets(total_prediction_rounds, episode_regrets)
 	#At the end call plt.show() to ensure that the graph windows don't close
