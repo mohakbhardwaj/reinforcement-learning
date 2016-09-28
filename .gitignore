@@ -7,3 +7,5 @@ cartpole-policy-gradient-2.py
 #Folders
 cartpole-cem-experiment-*/
 cartpole-pg-experiment-*/
+cartpole-pg-experiment/
+mountaincar-pg-experiment/
