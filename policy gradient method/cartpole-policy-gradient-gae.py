@@ -20,14 +20,13 @@ replay_next_states = []
 replay_return_from_states = []
 
 class Actor:
-	def __init__(self, env, discount = 0.90, learning_rate = 0.008):
+	def __init__(self, env, ):
 		self.env = env
 		self.observation_space = env.observation_space
 		self.action_space = env.action_space
 		self.action_space_n = self.action_space.n
 		#Learning parameters
-		self.learning_rate = learning_rate
-		self.discount = discount
+		self.learning_rate = 0.008
 		#Declare tf graph
 		self.graph = tf.Graph()
 		#Build the graph when instantiated
@@ -83,13 +82,11 @@ class Actor:
 				episode_next_states.append(next_state_l)
 				episode_return_from_states.append(reward)
 				for i in xrange(len(episode_return_from_states)-1):
-					# episode_return_from_states[i] += reward
-					episode_return_from_states[i] += pow(self.discount,len(episode_return_from_states)-1-i)*reward
+					episode_return_from_states[i] += reward
 			else:
 				#Iterate through the replay memory  and update the final return for all states 
 				for i in xrange(len(episode_return_from_states)):
-					# episode_return_from_states[i] += reward
-					episode_return_from_states[i] += pow(self.discount,len(episode_return_from_states)-i)*reward
+					episode_return_from_states[i] += reward
 			curr_state = next_state
 		self.update_memory(episode_states, episode_actions, episode_rewards, episode_next_states, episode_return_from_states)
 		return episode_states, episode_actions, episode_rewards, episode_next_states, episode_return_from_states, total_reward
@@ -110,7 +107,7 @@ class Actor:
 				action = self.to_action_input(actions[j])
 
 				state = np.asarray(states[j])
-				state = state.reshape(1,len(self.observation_space.high))
+				state = state.reshape(1,4)
 
 				_, error_value = self.sess.run([self.optim, self.loss], feed_dict={self.x: state, self.action_input: action, self.y: advantage_vector[j] })
 	
@@ -122,7 +119,7 @@ class Actor:
 	def choose_action(self, state):
 		#Use softmax policy to sample
 		state = np.asarray(state)
-		state = state.reshape(1,len(self.observation_space.high))
+		state = state.reshape(1,4)
 		softmax_out = self.sess.run(self.policy, feed_dict={self.x:state})
 		action = np.random.choice([0,1], 1, replace = True, p = softmax_out[0])[0] #Sample action from prob density
 		return action
@@ -154,7 +151,7 @@ class Actor:
 
 
 class Critic:
-	def __init__(self, env, discount = 0.90, lmbda = 0.92, learning_rate = 0.008):
+	def __init__(self, env):
 		self.env = env
 		self.observation_space = env.observation_space
 		self.action_space = env.action_space
@@ -163,16 +160,16 @@ class Critic:
 		self.n_hidden_1 = 20
 		#Learning Parameters
 		# self.learning_rate = 0.008 
-		self.learning_rate = learning_rate
+		self.learning_rate = 0.008
 		# self.num_epochs = 12
 		# self.batch_size = 150
 		#20 150
-		self.num_epochs = 20
+		self.num_epochs = 3
 		self.batch_size = 32
 		#Discount factor
-		self.discount = discount
+		self.discount = 0.96
 		#Advantage function parameter to trade off
-		self.lm = lmbda
+		self.lm = 0.92
 		self.graph = tf.Graph()
 		with self.graph.as_default():
 			tf.set_random_seed(1234)
@@ -199,37 +196,22 @@ class Critic:
 		#First hidden layer
 		layer_1 = tf.add(tf.matmul(x, weights['h1']), biases['b1'])
 		layer_1 = tf.nn.tanh(layer_1)
-		#SOutput layer
+		#Second hidden layer
 		out_layer = tf.matmul(layer_1, weights['out']) + biases['out']
 		return out_layer
 
-	# def update_value_estimate(self):
-	# 	global replay_states, replay_actions, replay_rewards, replay_next_states, replay_return_from_states
-	# 	#Monte Carlo prediction 
-	# 	# state_batches, return_batches, num_batches = self.get_all_batches(replay_states, replay_actions)
-		
-	# 	for epoch in xrange(self.num_epochs):	
-	# 		#Loop over all batches
-	# 		#We need to sample with replacement from the batch
-	# 		for i in xrange(num_batches):
-	# 			batch_state_input = state_batches[i]
-	# 			batch_return_input = return_batches[i]
-	# 			#Fit training data using minibatch
-	# 			self.sess.run(self.optim, feed_dict={self.state_input:batch_state_input, self.return_input:batch_return_input})
 	def update_value_estimate(self):
-		"""Uses mini batch gradient descent to update the value estimate"""
 		global replay_states, replay_actions, replay_rewards, replay_next_states, replay_return_from_states
 		#Monte Carlo prediction 
-		batch_size = self.batch_size
-		if np.ma.size(replay_states) < batch_size:
-			batch_size = np.ma.size(replay_states)
-
-		for epoch in xrange(self.num_epochs):
-			total_batch = np.ma.size(replay_states)/batch_size
+		state_batches, return_batches, num_batches = self.get_all_batches(replay_states, replay_actions)
+		
+		for epoch in xrange(self.num_epochs):	
 			#Loop over all batches
-			for i in xrange(total_batch):
-				batch_state_input, batch_return_input = self.get_next_batch(batch_size, replay_states, replay_return_from_states)
-				#Fit training data using batch
+			#We need to sample with replacement from the batch
+			for i in xrange(num_batches):
+				batch_state_input = state_batches[i]
+				batch_return_input = return_batches[i]
+				#Fit training data using minibatch
 				self.sess.run(self.optim, feed_dict={self.state_input:batch_state_input, self.return_input:batch_return_input})
 	
 
@@ -267,65 +249,50 @@ class Critic:
 			state_value = next_s_val
 		return gae
 
-	def get_next_batch(self, batch_size, states_data, returns_data):
-		"""Return mini-batch of transitions from replay data sampled with replacement"""
+
+
+	def get_all_batches(self, states_data, returns_data):
+		#Return all mini-batches of transitions from replay data 
 		all_states = []
 		all_returns = []
+		state_batches = []
+		return_batches = []
+
 		for i in xrange(len(states_data)):
 			episode_states = states_data[i]
 			episode_returns = returns_data[i]
 			for j in xrange(len(episode_states)):
 				all_states.append(episode_states[j])
 				all_returns.append(episode_returns[j])
+		
 		all_states = np.asarray(all_states)
 		all_returns = np.asarray(all_returns)
-		randidx = np.random.randint(all_states.shape[0], size=batch_size)
-		batch_states = all_states[randidx, :]
-		batch_returns = all_returns[randidx]
-		return batch_states, batch_returns
-
-	# def get_all_batches(self, states_data, returns_data):
-	# 	#Return all mini-batches of transitions from replay data 
-	# 	all_states = []
-	# 	all_returns = []
-	# 	state_batches = []
-	# 	return_batches = []
-
-	# 	for i in xrange(len(states_data)):
-	# 		episode_states = states_data[i]
-	# 		episode_returns = returns_data[i]
-	# 		for j in xrange(len(episode_states)):
-	# 			all_states.append(episode_states[j])
-	# 			all_returns.append(episode_returns[j])
 		
-	# 	all_states = np.asarray(all_states)
-	# 	all_returns = np.asarray(all_returns)
-		
-	# 	#Determine the feasible batch size
-	# 	batch_size = self.batch_size
+		#Determine the feasible batch size
+		batch_size = self.batch_size
 
-	# 	if np.ma.size(all_states,0) < batch_size:
-	# 		batch_size = np.ma.size(all_states,0)
-	# 	num_batches = np.ma.size(all_states,0)/batch_size
+		if np.ma.size(all_states,0) < batch_size:
+			batch_size = np.ma.size(all_states,0)
+		num_batches = np.ma.size(all_states,0)/batch_size
 
-	# 	for batch in xrange(num_batches):
-	# 		if all_states.shape[0] >= batch_size:
-	# 			randidx = np.random.randint(all_states.shape[0], size=batch_size)
-	# 			batch_states = all_states[randidx, :]
-	# 			batch_returns = all_returns[randidx]
-	# 			all_states = np.delete(all_states, randidx, axis=0)
-	# 			all_returns = np.delete(all_returns, randidx, axis=0)
-	# 			state_batches.append(batch_states)
-	# 			return_batches.append(batch_returns)
+		for batch in xrange(num_batches):
+			if all_states.shape[0] >= batch_size:
+				randidx = np.random.randint(all_states.shape[0], size=batch_size)
+				batch_states = all_states[randidx, :]
+				batch_returns = all_returns[randidx]
+				all_states = np.delete(all_states, randidx, axis=0)
+				all_returns = np.delete(all_returns, randidx, axis=0)
+				state_batches.append(batch_states)
+				return_batches.append(batch_returns)
 
-	# 	return state_batches, return_batches, num_batches
+		return state_batches, return_batches, num_batches
 
 
 class ActorCriticLearner:
-	def __init__(self, env, max_episodes, episodes_before_update, discount, lmbda,policy_learning_rate,value_learning_rate):
+	def __init__(self, env, max_episodes, episodes_before_update):
 		self.env = env
-		self.actor = Actor(self.env, discount, policy_learning_rate)
-		self.critic = Critic(self.env, discount, lmbda, value_learning_rate)
+		self.actor = Actor(self.env)
+		self.critic = Critic(self.env)
 		#Learner parameters
 		self.max_episodes = max_episodes
 		self.episodes_before_update = episodes_before_update
@@ -370,14 +337,11 @@ def main():
 	np.random.seed(1234)
 	env.monitor.start('./cartpole-pg-experiment', force=True)
 	#Learning Parameters
-	max_episodes = 300
+	max_episodes = 500
 	episodes_before_update = 2
-	discount = 0.96        #0.96
-	lmbda = 0.94          #0.93
-	policy_learning_rate = 0.01
-	value_learning_rate = 0.008
 
-	ac_learner = ActorCriticLearner(env, max_episodes, episodes_before_update, discount,lmbda,policy_learning_rate,value_learning_rate)
+
+	ac_learner = ActorCriticLearner(env, max_episodes, episodes_before_update)
 	ac_learner.learn()
 	env.monitor.close()
 	
