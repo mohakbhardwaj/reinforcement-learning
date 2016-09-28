@@ -373,7 +373,7 @@ def main():
 	max_episodes = 300
 	episodes_before_update = 2
 	discount = 0.96        #0.96
-	lmbda = 0.94          #0.93
+	lmbda = 0.93          #0.93
 	policy_learning_rate = 0.01
 	value_learning_rate = 0.008
 
