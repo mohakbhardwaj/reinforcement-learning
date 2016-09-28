@@ -83,7 +83,7 @@ class Actor:
 				break
 			
 			#Add state, action, reward transitions to containers for episode data
-			#[TODO: Store discounted reward instead of just reward and discounted return instead of just return to test]
+			#[TODO: Store discounted return instead of just return to test]
 			curr_state_l = curr_state.tolist()
 			next_state_l = next_state.tolist()
 			if curr_state_l not in episode_states:
@@ -93,11 +93,14 @@ class Actor:
 				episode_next_states.append(next_state_l)
 				episode_return_from_states.append(reward)
 				for i in xrange(len(episode_return_from_states)-1):
-					episode_return_from_states[i] += reward
+					#Here multiply the reward by discount factor raised to the power len(episode_return_from_states)-1-i
+					# episode_return_from_states[i] += reward
+					episode_return_from_states[i] += pow(self.discount,len(episode_return_from_states)-1-i)*reward
 			else:
-				#Iterate through the replay memory  and update the final return for all states 
+				#Iterate through the replay memory and update the final return for all states, i.e don't add the 
+				#state if it is already there but update reward for other states
 				for i in xrange(len(episode_return_from_states)):
-					episode_return_from_states[i] += reward
+					episode_return_from_states[i] += pow(self.discount,len(episode_return_from_states)-i)*reward
 		
 			curr_state = next_state
 		
@@ -120,7 +123,7 @@ class Actor:
 				action = self.to_action_input(actions[j])
 
 				state = np.asarray(states[j])
-				state = state.reshape(1,4)
+				state = state.reshape(1,len(self.observation_space.high))
 
 				_, error_value = self.sess.run([self.optim, self.loss], feed_dict={self.x: state, self.action_input: action, self.y: advantage_vector[j]})
 	
@@ -133,7 +136,7 @@ class Actor:
 	def choose_action(self, state):
 		"""Chooses action from the crrent policy and weights"""
 		state = np.asarray(state)
-		state = state.reshape(1,4)
+		state = state.reshape(1,len(self.observation_space.high))
 		softmax_out = self.sess.run(self.policy, feed_dict={self.x:state})
 		action = np.random.choice([0,1], 1, replace = True, p = softmax_out[0])[0] #Sample action from prob density
 		return action
@@ -179,8 +182,8 @@ class Critic:
 		#Learning Parameters
 		self.learning_rate = learning_rate 
 		self.discount = discount
-		self.num_epochs = 20
-		self.batch_size = 170
+		self.num_epochs = 20   
+		self.batch_size = 32 
 		self.graph = tf.Graph()
 		#Neural network is a Multi-Layered perceptron with one hidden layer containing tanh units
 		with self.graph.as_default():
@@ -213,6 +216,7 @@ class Critic:
 		out_layer = tf.matmul(layer_1, weights['out']) + biases['out']
 		return out_layer
 
+
 	def update_value_estimate(self):
 		"""Uses mini batch gradient descent to update the value estimate"""
 		global replay_states, replay_actions, replay_rewards, replay_next_states, replay_return_from_states
@@ -236,9 +240,9 @@ class Critic:
 		advantage_vector = []
 		for i in xrange(len(states)):
 			state = np.asarray(states[i])
-			state = state.reshape(1,4)
+			state = state.reshape(1,len(self.observation_space.high))
 			next_state = np.asarray(next_states[i])
-			next_state = next_state.reshape(1,4)
+			next_state = next_state.reshape(1,len(self.observation_space.high))
 			reward = rewards[i]
 			state_value = self.sess.run(self.value_pred, feed_dict={self.state_input:state})
 			next_state_value = self.sess.run(self.value_pred, feed_dict={self.state_input:next_state})
@@ -268,12 +272,11 @@ class Critic:
 
 
 
-
 class ActorCriticLearner:
-	def __init__(self, env, max_episodes, episodes_before_update):
+	def __init__(self, env, max_episodes, episodes_before_update, discount, policy_learning_rate, value_learning_rate):
 		self.env = env
-		self.actor = Actor(self.env)
-		self.critic = Critic(self.env)	
+		self.actor = Actor(self.env, discount, policy_learning_rate)
+		self.critic = Critic(self.env, discount, value_learning_rate)	
 
 		#Learner parameters
 		self.max_episodes = max_episodes
@@ -319,12 +322,15 @@ def main():
 	env.seed(1234)
 	np.random.seed(1234)
 	env.monitor.start('./cartpole-pg-experiment', force=True)
-	#Learning Parameters
-	max_episodes = 1000
+	#Hyper Parameters
+	max_episodes = 300
 	episodes_before_update = 2
+	discount = 0.85
+	policy_learning_rate = 0.01
+	value_learning_rate = 0.008
 
 
-	ac_learner = ActorCriticLearner(env, max_episodes, episodes_before_update)
+	ac_learner = ActorCriticLearner(env, max_episodes, episodes_before_update, discount, policy_learning_rate, value_learning_rate)
 	ac_learner.learn()
 	env.monitor.close()
 	
